@@ -1,44 +1,123 @@
-/* Service Worker — سكاي موبايل */
-const CACHE = 'sky-mobile-v11';
-const ASSETS = [
+/* ============================================================
+   🔄 Service Worker — سكاي موبايل
+   يخزّن الملفات للعمل بدون إنترنت
+   ============================================================ */
+
+const CACHE_NAME = 'sky-mobile-v15';
+const RUNTIME_CACHE = 'sky-mobile-runtime-v15';
+
+// الملفات الأساسية
+const PRECACHE_URLS = [
   './',
   './index.html',
   './manifest.json',
   './icon.svg',
-  'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2',
-  'https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js',
-  'https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap'
+  './telecom.html',
+  './telecom.js',
+  './sales-log.js',
+  './date-currency.js',
+  './features.js'
 ];
 
-self.addEventListener('install', e => {
-  e.waitUntil(
-    caches.open(CACHE).then(c =>
-      Promise.allSettled(ASSETS.map(u => c.add(u).catch(() => {})))
-    ).then(() => self.skipWaiting())
+// ═══ التثبيت ═══
+self.addEventListener('install', event => {
+  console.log('🔄 تثبيت Service Worker...');
+  event.waitUntil(
+    caches.open(CACHE_NAME)
+      .then(cache => {
+        console.log('📦 تخزين الملفات الأساسية');
+        return Promise.allSettled(
+          PRECACHE_URLS.map(url => 
+            cache.add(url).catch(err => console.warn('⚠️ فشل تخزين:', url))
+          )
+        );
+      })
+      .then(() => self.skipWaiting())
   );
 });
 
-self.addEventListener('activate', e => {
-  e.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
-    ).then(() => self.clients.claim())
+// ═══ التفعيل ═══
+self.addEventListener('activate', event => {
+  console.log('✅ تفعيل Service Worker');
+  event.waitUntil(
+    caches.keys()
+      .then(names => Promise.all(
+        names
+          .filter(name => name !== CACHE_NAME && name !== RUNTIME_CACHE)
+          .map(name => {
+            console.log('🗑️ حذف كاش قديم:', name);
+            return caches.delete(name);
+          })
+      ))
+      .then(() => self.clients.claim())
   );
 });
 
-self.addEventListener('fetch', e => {
-  const r = e.request;
-  if (r.method !== 'GET') return;
-  const u = new URL(r.url);
-  if (u.hostname.includes('supabase.co') || u.pathname.includes('/auth/')) return;
-  if (u.hostname === 'wa.me' || u.hostname === 'api.whatsapp.com') return;
-  e.respondWith(
-    caches.match(r).then(c => c || fetch(r).then(res => {
-      if (res && res.ok && res.type === 'basic') {
-        const cl = res.clone();
-        caches.open(CACHE).then(x => x.put(r, cl));
-      }
-      return res;
-    }).catch(() => c))
+// ═══ اعتراض الطلبات ═══
+self.addEventListener('fetch', event => {
+  const { request } = event;
+  const url = new URL(request.url);
+
+  // ⚠️ تجاهل الطلبات غير GET
+  if (request.method !== 'GET') return;
+
+  // ⚠️ لا تخزن Supabase (يجب أن يكون اتصالاً مباشراً)
+  if (url.hostname.includes('supabase.co')) return;
+
+  // ⚠️ تجاهل chrome-extension
+  if (url.protocol === 'chrome-extension:') return;
+
+  // ═══ استراتيجية للملفات المحلية ═══
+  if (url.origin === location.origin) {
+    event.respondWith(
+      // Network First: جرب الشبكة أولاً، ثم الكاش
+      fetch(request)
+        .then(response => {
+          if (response && response.status === 200) {
+            const clone = response.clone();
+            caches.open(RUNTIME_CACHE).then(cache => cache.put(request, clone));
+          }
+          return response;
+        })
+        .catch(() => {
+          // فشل الاتصال — ارجع للكاش
+          return caches.match(request).then(cached => {
+            if (cached) return cached;
+            // للصفحات، ارجع index.html
+            if (request.mode === 'navigate') return caches.match('./index.html');
+            return new Response('غير متاح بدون إنترنت', { status: 503 });
+          });
+        })
+    );
+    return;
+  }
+
+  // ═══ استراتيجية للملفات الخارجية (CDN) ═══
+  // Cache First: الكاش أولاً
+  event.respondWith(
+    caches.match(request).then(cached => {
+      if (cached) return cached;
+      return fetch(request)
+        .then(response => {
+          if (response && response.status === 200) {
+            const clone = response.clone();
+            caches.open(RUNTIME_CACHE).then(cache => cache.put(request, clone));
+          }
+          return response;
+        })
+        .catch(() => new Response('', { status: 503 }));
+    })
   );
 });
+
+// ═══ رسائل من الصفحة ═══
+self.addEventListener('message', event => {
+  if (event.data?.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+  if (event.data?.type === 'CLEAR_CACHE') {
+    caches.keys().then(names => Promise.all(names.map(n => caches.delete(n))));
+  }
+});
+
+console.log('📱 Service Worker جاهز');

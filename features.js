@@ -325,5 +325,55 @@
   
   console.log('💱 واجهة أسعار الصرف جاهزة');
 })();
-
+/* ═══════════════════════════════════════════════════════════
+   🌐 مؤشر حالة الاتصال
+   ═══════════════════════════════════════════════════════════ */
+(function initConnectionIndicator() {
+  function updateStatus() {
+    const online = navigator.onLine;
+    let badge = document.getElementById('connectionBadge');
+    
+    if (!badge) {
+      badge = document.createElement('div');
+      badge.id = 'connectionBadge';
+      badge.style.cssText = `
+        position: fixed;
+        top: 70px;
+        left: 16px;
+        padding: 6px 12px;
+        border-radius: 20px;
+        font-size: 11px;
+        font-weight: 800;
+        font-family: Cairo, sans-serif;
+        z-index: 99;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        transition: all 0.3s;
+        display: none;
+      `;
+      document.body.appendChild(badge);
+    }
+    
+    if (!online) {
+      badge.style.display = 'block';
+      badge.style.background = '#dc2626';
+      badge.style.color = '#fff';
+      badge.innerHTML = '🔴 غير متصل — البيانات المحلية فقط';
+    } else {
+      // إخفاء بعد 3 ثوان من عودة الاتصال
+      badge.style.background = '#16a34a';
+      badge.style.color = '#fff';
+      badge.innerHTML = '🟢 متصل';
+      badge.style.display = 'block';
+      setTimeout(() => { badge.style.display = 'none'; }, 3000);
+    }
+  }
+  
+  window.addEventListener('online', updateStatus);
+  window.addEventListener('offline', updateStatus);
+  
+  // فحص أولي
+  setTimeout(updateStatus, 2000);
+  
+  console.log('🌐 مؤشر الاتصال مفعّل');
+})();
 console.log('🚀 features.js محمّل بنجاح — كل الميزات مفعّلة');
